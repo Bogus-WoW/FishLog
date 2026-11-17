@@ -103,7 +103,7 @@ results per effective fishing skill (base + lure + buffs), so the
   the rarest item so far. The most reliable way to time one pool.
 - `/fishlog casts [text]` (or `/fishlog pools`) -- casts, catches, catch %,
   casts per item, and the per-skill breakdown for every bucket.
-- `/fishlog hud` -- keep the on-screen line up outside sessions too.
+- `/fishlog hud` -- keep the on-screen window up outside sessions too. The window (v1.4) shows your last catch, fishing skill and character level at the start vs now, casts, the Rack buff, and every item caught with counts.
 - `/fishlog reset casts` -- clear only the cast stats.
 
 `/fishlog export` now includes the cast stats too.

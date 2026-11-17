@@ -247,6 +247,7 @@ local function AddItem(itemID, name, quantity)
 			e.name = name or e.name
 			e.count = e.count + quantity
 			b.items[itemID] = e
+			ns.lastCatch = { name = name or e.name, qty = quantity, itemID = itemID }
 			if IsBloated(name) then
 				local side = BuffSide(b, current.buffed)
 				side.bloated = side.bloated + quantity
@@ -680,7 +681,7 @@ local function EnsureHUD()
 		return hud
 	end
 	hud = CreateFrame("Frame", "FishLogCastHUD", UIParent, "BackdropTemplate")
-	hud:SetSize(360, 46)
+	hud:SetSize(380, 46)
 	hud:SetPoint("TOP", 0, -120)
 	hud:SetMovable(true)
 	hud:EnableMouse(true)
@@ -707,6 +708,23 @@ local function EnsureHUD()
 	return hud
 end
 
+-- Where the window's "start" numbers come from: your fishing skill and
+-- character level when the session (or the always-on HUD) began.
+local base
+
+local function SetBase()
+	local _, rank = FishingSkill()
+	base = { skill = rank, level = UnitLevel("player") }
+	ns.lastCatch = nil
+end
+
+local MAX_LIST = 14
+
+local function Delta(a, b2)
+	if not (a and b2) then return "--" end
+	return ("%d -> %d (%+d)"):format(a, b2, b2 - a)
+end
+
 function ns.RefreshCastHUD()
 	if not (session or hudAlways) then
 		if hud then
@@ -717,31 +735,50 @@ function ns.RefreshCastHUD()
 	local h = EnsureHUD()
 	local key = (session and session.key) or ns.lastCastBucket
 	local b = key and CastStore()[key]
+	if not base then SetBase() end
 	if not b then
 		h.title:SetText("FishLog: cast to start counting")
 		h.body:SetText("")
 	else
 		local cpc = CastsPerCatch(b)
 		h.title:SetText("FishLog -- " .. BucketName(b))
-		local line = ("%d casts, %d caught (%s casts/catch, %.0f%%)"):format(
+		local lines = {}
+		local last = ns.lastCatch
+		lines[#lines + 1] = last
+			and ("Last catch: |cffffffff%s|r%s"):format(last.name or "?", (last.qty or 1) > 1 and (" x" .. last.qty) or "")
+			or "Last catch: --"
+		local _, rank = FishingSkill()
+		lines[#lines + 1] = ("Fishing skill: %s   Level: %s"):format(
+			Delta(base.skill, rank), Delta(base.level, UnitLevel("player")))
+		lines[#lines + 1] = ("%d casts, %d caught (%s casts/catch, %.0f%%)"):format(
 			b.casts, b.catches, cpc and ("%.1f"):format(cpc) or "--", CatchPct(b))
 		local buffName, expires = CampBuff()
 		if buffName then
 			local left = expires and expires > 0 and math.max(0, expires - GetTime()) or nil
-			line = line .. "\n|cff40ff40Rack buff on|r" .. (left and (" (%d min left)"):format(math.ceil(left / 60)) or "")
+			lines[#lines + 1] = "|cff40ff40Rack buff on|r" .. (left and (" (%d min left)"):format(math.ceil(left / 60)) or "")
 		else
-			line = line .. "\n|cffff8020No Rack buff|r"
+			lines[#lines + 1] = "|cffff8020No Rack buff|r"
 		end
 		local on = b.byBuff and b.byBuff.on
 		if on and on.catches > 0 then
-			line = line .. ("  -- Bloated with buff: %d in %d catches"):format(on.bloated, on.catches)
+			lines[#lines] = lines[#lines] .. ("  -- Bloated with buff: %d in %d catches"):format(on.bloated, on.catches)
 		end
 		local items = SortedItems(b)
 		if items[1] then
-			local rare = items[1]
-			line = line .. ("\nRarest: %s x%d (1 per %.1f casts)"):format(rare.name, rare.count, b.casts / rare.count)
+			table.sort(items, function(x, y)
+				if x.count ~= y.count then return x.count > y.count end
+				return x.name < y.name
+			end)
+			lines[#lines + 1] = "|cff999999Caught:|r"
+			for i = 1, math.min(#items, MAX_LIST) do
+				local it = items[i]
+				lines[#lines + 1] = ("  %d x %s  |cff999999(1 per %.1f casts)|r"):format(it.count, it.name, b.casts / it.count)
+			end
+			if #items > MAX_LIST then
+				lines[#lines + 1] = ("  ... and %d more"):format(#items - MAX_LIST)
+			end
 		end
-		h.body:SetText(line)
+		h.body:SetText(table.concat(lines, "\n"))
 	end
 	h:SetHeight(22 + h.body:GetStringHeight())
 	h:Show()
@@ -768,6 +805,7 @@ SlashCmdList.FISHLOG = function(msg)
 			end
 			label = label .. " " .. date("%Y-%m-%d %H:%M")
 			session = { key = "session|" .. label, label = label }
+			SetBase()
 			print("|cff40c0ffFishLog|r: session started: " .. label)
 			ns.RefreshCastHUD()
 		elseif sub == "stop" then
@@ -781,6 +819,7 @@ SlashCmdList.FISHLOG = function(msg)
 					end
 				end
 				session = nil
+				base = nil
 				ns.RefreshCastHUD()
 			else
 				print("|cff40c0ffFishLog|r: no session running.")
@@ -813,6 +852,8 @@ SlashCmdList.FISHLOG = function(msg)
 		PrintOpened(rest)
 	elseif cmd == "hud" then
 		hudAlways = not hudAlways
+		if hudAlways and not session then SetBase() end
+		if not hudAlways and not session then base = nil end
 		print("|cff40c0ffFishLog|r: casts HUD " .. (hudAlways and "always on." or "only during sessions."))
 		ns.RefreshCastHUD()
 	elseif cmd == "reset" and rest:lower() == "casts" then
