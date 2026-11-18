@@ -462,6 +462,7 @@ watcher:SetScript("OnEvent", function(_, event, ...)
 	elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
 		local unit, _, spellID = ...
 		if unit == "player" and GetSpellName(spellID) == FISHING then
+			if ns.EnsureSession then ns.EnsureSession() end
 			StartCast()
 		end
 	elseif event == "UI_ERROR_MESSAGE" or event == "UI_INFO_MESSAGE" then
@@ -704,6 +705,13 @@ local function EnsureHUD()
 	hud.body:SetPoint("TOPLEFT", hud.title, "BOTTOMLEFT", 0, -3)
 	hud.body:SetPoint("RIGHT", -8, 0)
 	hud.body:SetJustifyH("LEFT")
+	hud.reset = CreateFrame("Button", nil, hud, "UIPanelButtonTemplate")
+	hud.reset:SetSize(100, 20)
+	hud.reset:SetPoint("BOTTOMRIGHT", -6, 6)
+	hud.reset:SetText("Reset session")
+	hud.reset:SetScript("OnClick", function()
+		if ns.ResetSession then ns.ResetSession() end
+	end)
 	hud:Hide()
 	return hud
 end
@@ -711,6 +719,15 @@ end
 -- Where the window's "start" numbers come from: your fishing skill and
 -- character level when the session (or the always-on HUD) began.
 local base
+
+-- Fishing Pole in the main hand?
+local function PoleEquipped()
+	if ns.IsFishingPoleEquipped then return ns.IsFishingPoleEquipped() end
+	local id = GetInventoryItemID and GetInventoryItemID("player", 16)
+	if not id then return false end
+	local _, _, _, _, _, classID, subclassID = C_Item.GetItemInfoInstant(id)
+	return classID == 2 and subclassID == 20
+end
 
 local function SetBase()
 	local _, rank = FishingSkill()
@@ -726,7 +743,9 @@ local function Delta(a, b2)
 end
 
 function ns.RefreshCastHUD()
-	if not (session or hudAlways) then
+	-- the window shows while you hold a Fishing Pole during a session (or always, with /fishlog hud)
+	local show = hudAlways or (session and (session.manual or PoleEquipped()))
+	if not show then
 		if hud then
 			hud:Hide()
 		end
@@ -780,9 +799,91 @@ function ns.RefreshCastHUD()
 		end
 		h.body:SetText(table.concat(lines, "\n"))
 	end
-	h:SetHeight(22 + h.body:GetStringHeight())
+	h.reset:SetShown(session ~= nil)
+	h:SetHeight(22 + h.body:GetStringHeight() + (session and 26 or 0))
 	h:Show()
 end
+
+--------------------------------------------------------------------------
+-- Sessions start by themselves
+--
+-- Your first Fishing cast starts a session, named after the place and time,
+-- and the window appears. "Reset session" starts a fresh one (the old one
+-- stays in the saved stats). The running session is remembered across /reload
+-- and quick relogs (30 minutes), so it carries on where it was.
+-- /fishlog autosession turns the automatic start off.
+--------------------------------------------------------------------------
+
+local RESUME_SECONDS = 1800
+
+local function SaveSession()
+	local st = ns.Store()
+	if session then
+		st.session = { key = session.key, label = session.label, manual = session.manual,
+			skill = base and base.skill, level = base and base.level, t = time() }
+	else
+		st.session = nil
+	end
+end
+
+local function BeginSession(label, manual)
+	if not label or label == "" then
+		label = (GetSubZoneText() ~= "" and GetSubZoneText()) or GetRealZoneText() or "Fishing"
+	end
+	label = label .. " " .. date("%Y-%m-%d %H:%M")
+	local key, shown, n = "session|" .. label, label, 1
+	while CastStore()[key] do
+		n = n + 1
+		key, shown = "session|" .. label .. " #" .. n, label .. " #" .. n
+	end
+	session = { key = key, label = shown, manual = manual or nil }
+	SetBase()
+	SaveSession()
+	ns.RefreshCastHUD()
+	return session
+end
+ns.BeginSession = BeginSession
+
+function ns.EnsureSession()
+	if session then
+		SaveSession() -- keeps the "last active" time fresh
+		return
+	end
+	if ns.Store().autoSession == false then return end
+	BeginSession()
+	print("|cff40c0ffFishLog|r: session started: " .. session.label .. " (the window has a Reset session button).")
+end
+
+function ns.ResetSession()
+	if not session then return end
+	local manual = session.manual
+	BeginSession(nil, manual)
+	print("|cff40c0ffFishLog|r: new session: " .. session.label)
+end
+
+function ns.ClearSession()
+	session = nil
+	base = nil
+	ns.Store().session = nil
+end
+
+local sessionEvents = CreateFrame("Frame")
+sessionEvents:RegisterEvent("PLAYER_LOGIN")
+sessionEvents:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+sessionEvents:SetScript("OnEvent", function(_, event)
+	if event == "PLAYER_LOGIN" then
+		local s = ns.Store().session
+		if s and s.key and s.t and (time() - s.t) <= RESUME_SECONDS then
+			session = { key = s.key, label = s.label, manual = s.manual }
+			if s.skill or s.level then base = { skill = s.skill, level = s.level } else SetBase() end
+			ns.RefreshCastHUD()
+		else
+			ns.Store().session = nil
+		end
+	else
+		ns.RefreshCastHUD()
+	end
+end)
 
 --------------------------------------------------------------------------
 -- Slash commands (layered on top of Core.lua's /fishlog)
@@ -800,14 +901,8 @@ SlashCmdList.FISHLOG = function(msg)
 		local sub, label = rest:match("^(%S*)%s*(.-)$")
 		sub = (sub or ""):lower()
 		if sub == "start" then
-			if label == "" then
-				label = (GetSubZoneText() ~= "" and GetSubZoneText()) or GetRealZoneText() or "Session"
-			end
-			label = label .. " " .. date("%Y-%m-%d %H:%M")
-			session = { key = "session|" .. label, label = label }
-			SetBase()
-			print("|cff40c0ffFishLog|r: session started: " .. label)
-			ns.RefreshCastHUD()
+			BeginSession(label, true)
+			print("|cff40c0ffFishLog|r: session started: " .. session.label)
 		elseif sub == "stop" then
 			if session then
 				local b = CastStore()[session.key]
@@ -818,15 +913,20 @@ SlashCmdList.FISHLOG = function(msg)
 						print("    " .. line)
 					end
 				end
-				session = nil
-				base = nil
+				ns.ClearSession()
 				ns.RefreshCastHUD()
 			else
 				print("|cff40c0ffFishLog|r: no session running.")
 			end
+		elseif sub == "reset" then
+			if session then ns.ResetSession() else print("|cff40c0ffFishLog|r: no session running.") end
 		else
-			print("|cff40c0ffFishLog|r: /fishlog session start [label]  or  /fishlog session stop")
+			print("|cff40c0ffFishLog|r: /fishlog session start [label], /fishlog session reset or /fishlog session stop")
 		end
+	elseif cmd == "autosession" then
+		local st = ns.Store()
+		st.autoSession = (st.autoSession == false)
+		print("|cff40c0ffFishLog|r: a session now starts by itself on your first cast: " .. (st.autoSession == false and "off." or "on."))
 	elseif cmd == "buff" then
 		local name, expires = CampBuff()
 		if name then
@@ -858,14 +958,14 @@ SlashCmdList.FISHLOG = function(msg)
 		ns.RefreshCastHUD()
 	elseif cmd == "reset" and rest:lower() == "casts" then
 		ns.Store().casts = {}
-		session = nil
+		ns.ClearSession()
 		ns.RefreshCastHUD()
 		print("|cff40c0ffFishLog|r: cast stats cleared (catch log kept).")
 	else
 		coreSlash(msg)
 		if cmd == "reset" and rest:lower() == "confirm" then
 			ns.Store().casts = {}
-			session = nil
+			ns.ClearSession()
 			ns.RefreshCastHUD()
 		end
 	end

@@ -133,3 +133,10 @@ crashes mid-fishing they're restored the next time you log in.
 - `Sound.lua` -- the louder-splash sound mix while fishing.
 - `Export.lua` -- builds the `/fishlog export` JSON blob and its copy
   window.
+
+## Sessions start by themselves (v1.5)
+
+Your first Fishing cast starts a session, named after the place and the time, and the session window appears. It shows while you hold a Fishing Pole. The **Reset session** button in the window starts a fresh session (the old one stays in the saved stats; `/fishlog casts` lists it). A running session carries on after `/reload` or a quick relog (up to 30 minutes).
+
+- `/fishlog autosession` turns the automatic start on or off.
+- `/fishlog session start [label]`, `/fishlog session reset` and `/fishlog session stop` still work if you want to name a session or end it.
