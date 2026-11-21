@@ -2,7 +2,7 @@
 ## Title: FishLog
 ## Notes: Logs which fish/items you catch, and where, so you can figure out which zones are worth fishing.
 ## Author: Adam
-## Version: 1.5.0
+## Version: 1.6.0
 ## SavedVariables: FishLogDB
 
 Core.lua
@@ -11,3 +11,4 @@ Casts.lua
 Sound.lua
 Export.lua
 OneKey.lua
+Lure.lua

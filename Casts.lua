@@ -948,6 +948,8 @@ SlashCmdList.FISHLOG = function(msg)
 		for _, b in ipairs(list) do
 			print("  |cffffd100" .. BucketName(b) .. "|r: " .. BuffLine(b))
 		end
+	elseif cmd == "lure" then
+		if ns.LureCommand then ns.LureCommand(rest) end
 	elseif cmd == "opened" then
 		PrintOpened(rest)
 	elseif cmd == "hud" then

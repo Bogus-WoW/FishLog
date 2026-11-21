@@ -140,3 +140,17 @@ Your first Fishing cast starts a session, named after the place and the time, an
 
 - `/fishlog autosession` turns the automatic start on or off.
 - `/fishlog session start [label]`, `/fishlog session reset` and `/fishlog session stop` still work if you want to name a session or end it.
+
+## Lure icon (v1.6)
+
+When you hold a Fishing Pole with no lure on it, and you carry a lure, a small icon appears (with the lure's stack count). Click it and the lure goes on the pole. It uses the strongest lure in your bags (Aquadynamic Fish Attractor, Flesh Eating Worm, Bright Baubles, Aquadynamic Fish Lens, Nightcrawlers, Shiny Bauble). It hides in combat.
+
+- To move the icon, press and hold it for a second, then drag. A quick click still applies the lure. `/fishlog lure reset` puts it back.
+- `/fishlog lure` shows what it sees right now. `/fishlog lure off` turns the icon off.
+
+## Food reminder
+
+Next to the lure icon, a second icon appears when you hold a Fishing Pole, carry Filet of Redgill and don't have the food buff. Click it to eat. It disappears once the buff is on.
+
+- The buff is matched by name, "Well Fed" by default. If the game uses another name, run `/fishlog lure auras` while fed to list your buffs, then `/fishlog lure foodbuff <name>`.
+- `/fishlog lure food off` / `food on` turns the reminder off or on. `/fishlog lure food <item name>` changes which food it looks for.
